@@ -1,0 +1,114 @@
+/*
+ * Copyright (c) 2016 - 2017 Cadence Design Systems Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/dts-v1/;
+
+/ {
+	compatible = "cdns,xtensa-iss";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&pic>;
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8 debug eth0=tuntap,,tap9 root=/dev/simdisk0";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00050000 0x07fb0000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			compatible = "cdns,xtensa-cpu";
+			reg = <0>;
+		};
+	};
+
+	pic: pic {
+		compatible = "cdns,xtensa-pic";
+		/* one cell: internal irq number,
+		 * two cells: second cell == 0: internal irq number
+		 *            second cell == 1: external irq number
+		 */
+		#interrupt-cells = <2>;
+		interrupt-controller;
+	};
+
+	sim-shmem {
+		compatible = "cdns,sim-shmem";
+		reg = <0xf0000000 0x08000000
+		       0x00000000 0x10000000>;
+		exit-loc = <0xf0000108>;
+		reg-names = "SharedRAM_L", "SystemRAM_L";
+	};
+
+	xvp@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "cdns,xrp,v1";
+		reg = <0xf0000000 0x04000000
+		       0xfd001000 0x00000200>;
+		device-irq = <0xf2fff100 0 16>; /* offset, bit#, IRQ# */
+		device-irq-mode = <2>;
+		host-irq = <0xfffff000 0>; /* offset, bit# */
+		host-irq-mode = <2>;
+		interrupts = <15 0>;
+		firmware-name = "xrp0.elf";
+		ranges = <0x00000000 0x00000000 0x10000000
+			  0x3ffc0000 0xc0000000 0x00020000
+			  0x3ffe0000 0xc0020000 0x00020000
+			  0x50000000 0x50000000 0x01000000
+			  0x60000000 0x60000000 0x20000000
+			  0xf0000000 0xf0000000 0x0d000000>;
+	};
+
+	xvp@1 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "cdns,xrp,v1";
+		reg = <0xf4000000 0x04000000
+		       0xfd002000 0x00000200>;
+		device-irq = <0xf2ffe104 0 16>; /* offset, bit#, IRQ# */
+		device-irq-mode = <2>;
+		host-irq = <0xffffe000 0>; /* offset, bit# */
+		host-irq-mode = <2>;
+		interrupts = <15 0>;
+		firmware-name = "xrp1.elf";
+		ranges = <0x00000000 0x00000000 0x10000000
+			  0x3ffc0000 0xc0040000 0x00020000
+			  0x3ffe0000 0xc0060000 0x00020000
+			  0x50000000 0x50000000 0x01000000
+			  0x60000000 0x60000000 0x20000000
+			  0xf0000000 0xf0000000 0x0d000000>;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges = <0x00000000 0xf0000000 0x10000000>;
+	};
+};
