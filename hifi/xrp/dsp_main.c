@@ -21,7 +21,6 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,29 +30,63 @@
 #include "xrp_api.h"
 #include "xrp_dsp_hw.h"
 
-static volatile uint32_t *p = (volatile uint32_t *)0x8b300100;
+struct ring_buffer {
+	uint32_t panic;
+	uint32_t read;
+	uint32_t write;
+	uint32_t size;
+	char data[0];
+};
 
-#define fprintf panic_fprintf
-static void panic_fprintf(void *fp, const char *str, ...)
+static volatile struct ring_buffer *p = (volatile void *)0x8b300000;
+
+static ssize_t debug_write(void *cookie, const char *buf, size_t size)
 {
-	static uint32_t off;
+	volatile struct ring_buffer *rb = cookie;
+	uint32_t read = rb->read;
+	uint32_t write = rb->write;
+	size_t total;
+	size_t tail;
 
-	(void)fp;
-	if (off < 4096) {
-		va_list vl;
-
-		va_start(vl, str);
-		off += vsprintf((void *)p + 8 + off, str, vl);
-		va_end(vl);
-		p[1] = off;
+	tail = rb->size - write;
+	if (read > write) {
+		total = read - 1 - write;
+		tail = total;
+	} else if (read == write) {
+		total = rb->size - 1;
+	} else {
+		total = rb->size - 1 - write + read;
+		if (total < tail)
+			tail = total;
 	}
+
+	if (size < tail)
+		tail = size;
+
+	memcpy((char *)rb->data + write, buf, tail);
+	buf += tail;
+	write += tail;
+	if (write == rb->size)
+		write = 0;
+	size -= tail;
+	total -= tail;
+	if (size && total) {
+		if (size < total)
+			total = size;
+		memcpy((char *)rb->data, buf, total);
+		write += total;
+	} else {
+		total = 0;
+	}
+	rb->write = write;
+	return tail + total;
 }
 
 static void hang(void) __attribute__((noreturn));
 static void hang(void)
 {
 	for (;;)
-		*p = 0xdeadbabe;
+		p->panic = 0xdeadbabe;
 }
 
 void abort(void)
@@ -112,19 +145,29 @@ int main(void)
 {
 	enum xrp_status status;
 	struct xrp_device *device;
+	static cookie_io_functions_t ring_buffer_ops = {
+		.write = debug_write,
+	};
 
-	p[0] = 0;
-	p[1] = 0;
+	p->read = 0;
+	p->write = 0;
+	p->size = 0xff0;
+	p->panic = 0;
+
+	stdout = fopencookie((void *)p, "w", ring_buffer_ops);
+	stderr = fopencookie((void *)p, "w", ring_buffer_ops);
+	setvbuf(stdout, NULL, _IONBF, 0);
+	setvbuf(stderr, NULL, _IONBF, 0);
 
 	register_exception_handlers();
 	device = xrp_open_device(0, &status);
 	if (status != XRP_STATUS_SUCCESS) {
-		fprintf(stderr, "xrp_open_device failed\n");
+		printf("xrp_open_device failed\n");
 		abort();
 	}
 
 	for (;;) {
-		*p = (*p + 1) & 0x7fffffff;
+		p->panic = (p->panic + 1) & 0x7fffffff;
 		status = xrp_device_dispatch(device);
 		if (status == XRP_STATUS_PENDING)
 			xrp_hw_wait_device_irq();
