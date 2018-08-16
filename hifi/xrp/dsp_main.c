@@ -32,9 +32,13 @@
 
 struct ring_buffer {
 	uint32_t panic;
+	uint32_t interrupt;
+	uint32_t ccount;
 	uint32_t read;
 	uint32_t write;
 	uint32_t size;
+	uint32_t stack;
+	uint32_t reserved[9];
 	char data[0];
 };
 
@@ -47,6 +51,11 @@ static ssize_t debug_write(void *cookie, const char *buf, size_t size)
 	uint32_t write = rb->write;
 	size_t total;
 	size_t tail;
+	uint32_t stack;
+
+	asm volatile ("mov %0, a1" : "=a"(stack) :: "memory");
+	if (stack < rb->stack)
+		rb->stack = stack;
 
 	tail = rb->size - write;
 	if (read > write) {
@@ -85,8 +94,18 @@ static ssize_t debug_write(void *cookie, const char *buf, size_t size)
 static void hang(void) __attribute__((noreturn));
 static void hang(void)
 {
-	for (;;)
+	for (;;) {
+		uint32_t tmp;
+		uint32_t interrupt;
+		uint32_t ccount;
+
+		asm volatile ("rsil %0, 15" : "=a" (tmp) :: "memory");
+		asm volatile ("rsr.interrupt %0" : "=a" (interrupt) :: "memory");
+		asm volatile ("rsr.ccount %0" : "=a" (ccount) :: "memory");
+		p->interrupt = interrupt;
+		p->ccount = ccount;
 		p->panic = 0xdeadbabe;
+	}
 }
 
 void abort(void)
@@ -141,6 +160,48 @@ static void register_exception_handlers(void)
 	}
 }
 
+struct ipcm_struct {
+	uint32_t source;
+	uint32_t dset;
+	uint32_t dclear;
+	uint32_t dstatus;
+	uint32_t mode;
+	uint32_t imask;
+	uint32_t iclear;
+	uint32_t send;
+	uint32_t dr[8];
+};
+
+struct ipcm_int_struct {
+	uint32_t mis;
+	uint32_t ris;
+};
+
+
+volatile struct ipcm_struct *ipcm = (volatile struct ipcm_struct *)0xe896b000;
+volatile struct ipcm_int_struct *ipcm_int = (volatile struct ipcm_int_struct *)0xe896b800;
+
+void ipcm_send(void)
+{
+	volatile struct ipcm_struct *mb = ipcm + 2;
+
+	mb->iclear = 0x10;
+	if (!(mb->mode & 0x10)) {
+	}
+	mb->source = 0x10;
+	mb->dclear = ~0;
+	mb->dset = 0x0;
+	mb->imask = ~0x11;
+	mb->mode = 0x1;
+	mb->dr[0] = 0x1;
+	mb->send = 0x10;
+}
+
+void ipcm_ack(void)
+{
+	ipcm[18].iclear = ~ipcm[18].imask & 0x10;
+}
+
 int main(void)
 {
 	enum xrp_status status;
@@ -151,8 +212,10 @@ int main(void)
 
 	p->read = 0;
 	p->write = 0;
-	p->size = 0xff0;
+	p->size = 0x1000 - sizeof(struct ring_buffer);
 	p->panic = 0;
+	p->interrupt = 0;
+	p->ccount = 0;
 
 	stdout = fopencookie((void *)p, "w", ring_buffer_ops);
 	stderr = fopencookie((void *)p, "w", ring_buffer_ops);
@@ -166,7 +229,16 @@ int main(void)
 		abort();
 	}
 
+	ipcm_ack();
+
 	for (;;) {
+		uint32_t interrupt;
+		uint32_t ccount;
+
+		asm volatile ("rsr.interrupt %0" : "=a" (interrupt) :: "memory");
+		asm volatile ("rsr.ccount %0" : "=a" (ccount) :: "memory");
+		p->interrupt = interrupt;
+		p->ccount = ccount;
 		p->panic = (p->panic + 1) & 0x7fffffff;
 		status = xrp_device_dispatch(device);
 		if (status == XRP_STATUS_PENDING)

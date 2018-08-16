@@ -21,7 +21,7 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-AM_CPPFLAGS = -I$(srcdir)/..
+AM_CPPFLAGS = -I$(srcdir)/.. -I$(srcdir)/../xrp-common
 AM_CFLAGS = -W -Wall
 
 bin_PROGRAMS =
@@ -62,7 +62,7 @@ endif
 endif
 
 if HOST_OS_LINUX
-AM_LDFLAGS = -lrt
+xrp_host_standalone_LDFLAGS = -lrt
 endif
 
 xrp_dsp_hosted_SOURCES = dsp_main.c dsp_test.c

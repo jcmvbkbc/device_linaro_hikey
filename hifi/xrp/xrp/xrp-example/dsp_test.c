@@ -27,6 +27,7 @@
 #include <string.h>
 #include "xrp_api.h"
 #include "example_namespace.h"
+#include "xrp_debug.h"
 
 void xrp_run_command(const void *in_data, size_t in_data_size,
 		     void *out_data, size_t out_data_size,
@@ -38,7 +39,7 @@ void xrp_run_command(const void *in_data, size_t in_data_size,
 	(void)out_data;
 	(void)out_data_size;
 	(void)buffer_group;
-	printf("%s\n", __func__);
+	pr_debug("%s\n", __func__);
 	if (status)
 		*status = XRP_STATUS_SUCCESS;
 }
@@ -53,7 +54,7 @@ static enum xrp_status example_v1_handler(void *handler_context,
 	size_t bg_sz = 0;
 
 	(void)handler_context;
-	printf("%s, in_data_size = %zu, out_data_size = %zu\n",
+	pr_debug("%s, in_data_size = %zu, out_data_size = %zu\n",
 	       __func__, in_data_size, out_data_size);
 
 	for (i = 0; i < in_data_size; ++i) {
@@ -82,7 +83,7 @@ static enum xrp_status example_v1_handler(void *handler_context,
 			break;
 		}
 
-		printf("%s: copy %d bytes from %p to %p\n",
+		pr_debug("%s: copy %d bytes from %p to %p\n",
 		       __func__, sz, src, dst);
 		memcpy(dst, src, sz);
 		xrp_unmap_buffer(sbuf, src, NULL);
@@ -95,6 +96,19 @@ static enum xrp_status example_v1_handler(void *handler_context,
 				  0, &bg_sz, sizeof(bg_sz), NULL);
 
 	return bg_sz == i ? XRP_STATUS_SUCCESS : XRP_STATUS_FAILURE;
+}
+
+static void example_v2_memcpy(uint32_t paddr, struct xrp_buffer *buf)
+{
+	size_t sz;
+	void *p;
+	if (!buf)
+		return;
+	xrp_buffer_get_info(buf, XRP_BUFFER_SIZE_SIZE_T, &sz, sizeof(sz), NULL);
+	p = xrp_map_buffer(buf, 0, sz, XRP_WRITE, NULL);
+	memcpy(p, (void *)paddr, sz);
+	xrp_unmap_buffer(buf, p, NULL);
+	xrp_release_buffer(buf, NULL);
 }
 
 static enum xrp_status example_v2_handler(void *handler_context,
@@ -117,41 +131,13 @@ static enum xrp_status example_v2_handler(void *handler_context,
 		return XRP_STATUS_SUCCESS;
 	case EXAMPLE_V2_CMD_FAIL:
 		return XRP_STATUS_FAILURE;
+	case EXAMPLE_V2_CMD_MEMCPY:
+		example_v2_memcpy(cmd->memcpy.paddr,
+				  xrp_get_buffer_from_group(buffer_group, 0, NULL));
+		return XRP_STATUS_SUCCESS;
 	default:
 		return XRP_STATUS_FAILURE;
 	}
-}
-
-static enum xrp_status test_ns(struct xrp_device *device)
-{
-	enum xrp_status status;
-	char test_nsid[16][XRP_NAMESPACE_ID_SIZE];
-	size_t i;
-
-	for (i = 0; i < sizeof(test_nsid) / sizeof(test_nsid[0]); ++i) {
-		size_t j;
-
-		for (j = 0; j < XRP_NAMESPACE_ID_SIZE; ++j) {
-			test_nsid[i][j] = rand();
-		}
-	}
-	for (i = 0; i < sizeof(test_nsid) / sizeof(test_nsid[0]); ++i) {
-		xrp_device_register_namespace(device, test_nsid[i],
-					      NULL, NULL, &status);
-		if (status != XRP_STATUS_SUCCESS) {
-			printf("xrp_register_namespace failed\n");
-			return XRP_STATUS_FAILURE;
-		}
-	}
-	for (i = 0; i < sizeof(test_nsid) / sizeof(test_nsid[0]); ++i) {
-		xrp_device_unregister_namespace(device, test_nsid[i],
-						&status);
-		if (status != XRP_STATUS_SUCCESS) {
-			printf("xrp_unregister_namespace failed\n");
-			return XRP_STATUS_FAILURE;
-		}
-	}
-	return XRP_STATUS_SUCCESS;
 }
 
 void __attribute__((constructor)) dsp_test_register(void)
@@ -161,24 +147,19 @@ void __attribute__((constructor)) dsp_test_register(void)
 
 	device = xrp_open_device(0, &status);
 	if (status != XRP_STATUS_SUCCESS) {
-		printf("xrp_open_device failed\n");
+		pr_debug("xrp_open_device failed\n");
 		abort();
-	}
-	status = test_ns(device);
-	if (status != XRP_STATUS_SUCCESS) {
-		printf("test_ns failed\n");
-		goto err_release;
 	}
 	xrp_device_register_namespace(device, XRP_EXAMPLE_V1_NSID,
 				      example_v1_handler, NULL, &status);
 	if (status != XRP_STATUS_SUCCESS) {
-		printf("xrp_register_namespace for XRP_EXAMPLE_V1_NSID failed\n");
+		pr_debug("xrp_register_namespace for XRP_EXAMPLE_V1_NSID failed\n");
 		goto err_release;
 	}
 	xrp_device_register_namespace(device, XRP_EXAMPLE_V2_NSID,
 				      example_v2_handler, NULL, &status);
 	if (status != XRP_STATUS_SUCCESS) {
-		printf("xrp_register_namespace for XRP_EXAMPLE_V2_NSID failed\n");
+		pr_debug("xrp_register_namespace for XRP_EXAMPLE_V2_NSID failed\n");
 		goto err_release;
 	}
 err_release:

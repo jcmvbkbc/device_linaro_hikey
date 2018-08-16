@@ -50,6 +50,7 @@ static void f1(int devid)
 	status = -1;
 
 	for (i = 0; i <= 32; ++i) {
+		int mismatch = 0;
 		memset(in_buf, i, sizeof(in_buf));
 		memset(out_buf, 0, sizeof(out_buf));
 		xrp_run_command_sync(queue,
@@ -59,9 +60,21 @@ static void f1(int devid)
 		assert(status == XRP_STATUS_SUCCESS);
 		status = -1;
 
+		for (j = 0; j < 32; ++j)
+			mismatch += (out_buf[j] != (j < i ? i + j : 0));
+
+		if (!mismatch)
+			continue;
+
 		for (j = 0; j < 32; ++j) {
-			assert(out_buf[j] == (j < i ? i + j : 0));
+			int ne = (out_buf[j] != (j < i ? i + j : 0));
+			fprintf(stderr,
+				"out_buf[%d] (%p) == 0x%02x %c= expected: 0x%02x\n",
+				j, out_buf + j, (uint8_t)out_buf[j],
+				ne ? '!' : '=',
+				(j < i ? i + j : 0));
 		}
+		assert(mismatch == 0);
 	}
 
 	xrp_release_queue(queue, &status);
@@ -155,7 +168,7 @@ static void f3(int devid)
 	struct xrp_device *device;
 	struct xrp_queue *queue;
 	uint32_t sz;
-	int i;
+	unsigned i;
 
 
 	device = xrp_open_device(devid, &status);
@@ -218,7 +231,19 @@ static void f3(int devid)
 			assert(data1);
 			assert(data2);
 			fprintf(stderr, "comparing %p vs %p\n", data1, data2);
-			assert(memcmp(data1, data2, sz) == 0);
+			if (memcmp(data1, data2, sz)) {
+				for (i = 0; i < sz; ++i) {
+					uint8_t v1 = ((uint8_t *)data1)[i];
+					uint8_t v2 = ((uint8_t *)data2)[i];
+					if (v1 != v2) {
+						fprintf(stderr,
+							"data1[%d] (%p) (== 0x%02x) != data2[%d] (%p) (== 0x%02x)\n",
+							i, data1 + i, v1, i, data2 + i, v2);
+
+					}
+				}
+				assert(0);
+			}
 			xrp_unmap_buffer(buf1, data1, &status);
 			assert(status == XRP_STATUS_SUCCESS);
 			status = -1;
@@ -445,9 +470,121 @@ static void f7(int devid)
 	assert(status == XRP_STATUS_SUCCESS);
 }
 
+static void dump(const void *buf, size_t sz)
+{
+	size_t i;
+
+	for (i = 0; i < sz; ++i)
+		printf("%02x %c", ((const uint8_t *)buf)[i],
+		       (i & 15) == 15 ? '\n' : ' ');
+}
+
+static void do_dump(int devid, unsigned long addr, unsigned long sz)
+{
+	enum xrp_status status = -1;
+	struct xrp_device *device;
+	struct xrp_queue *queue;
+	struct example_v2_cmd cmd = {
+		.cmd = EXAMPLE_V2_CMD_MEMCPY,
+		.memcpy.paddr = (uint32_t)addr,
+	};
+	struct xrp_buffer_group *group;
+	struct xrp_buffer *buf;
+	void *data;
+
+	device = xrp_open_device(devid, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+	queue = xrp_create_ns_queue(device, XRP_EXAMPLE_V2_NSID, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+
+	group = xrp_create_buffer_group(&status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+	buf = xrp_create_buffer(device, sz, NULL, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+	xrp_add_buffer_to_group(group, buf, XRP_WRITE, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+
+	xrp_run_command_sync(queue,
+			     &cmd, sizeof(cmd),
+			     NULL, 0,
+			     group, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+
+	data = xrp_map_buffer(buf, 0, sz, XRP_READ, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+
+	dump(data, sz);
+
+	xrp_unmap_buffer(buf, data, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+	xrp_release_buffer(buf, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+
+	xrp_release_buffer_group(group, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+
+	xrp_release_queue(queue, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+	status = -1;
+	xrp_release_device(device, &status);
+	assert(status == XRP_STATUS_SUCCESS);
+}
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+static void do_memdump(int devid, unsigned long addr)
+{
+	char buf[256];
+	int fd = open("/dev/mem", O_RDONLY | O_SYNC);
+
+	(void)devid;
+	if (fd < 0) {
+		perror("open");
+		return;
+	}
+	if ((off_t)-1 == lseek(fd, addr, SEEK_SET)) {
+		perror("lseek");
+		close(fd);
+		return;
+	}
+	if (read(fd, buf, sizeof(buf)) < 0) {
+		perror("read");
+		close(fd);
+		return;
+	}
+	dump(buf, sizeof(buf));
+	close(fd);
+}
+
+enum {
+	CMD_TEST,
+	CMD_DUMP,
+	CMD_MEMDUMP,
+
+	CMD_N,
+};
+
 int main(int argc, char **argv)
 {
 	int devid = 0;
+	static const char * const cmd[CMD_N] = {
+		[CMD_TEST] = "test",
+		[CMD_DUMP] = "dump",
+		[CMD_MEMDUMP] = "memdump",
+	};
+	int i = 0;
 
 #ifdef HAVE_THREADS_XOS
 	xos_set_clock_freq(XOS_CLOCK_FREQ);
@@ -455,18 +592,75 @@ int main(int argc, char **argv)
 #endif
 	if (argc > 1)
 		sscanf(argv[1], "%i", &devid);
-	f1(devid);
-	printf("=======================================================\n");
-	f2(devid);
-	printf("=======================================================\n");
-	f3(devid);
-	printf("=======================================================\n");
-	f4(devid);
-	printf("=======================================================\n");
-	f5(devid);
-	printf("=======================================================\n");
-	f6(devid);
-	printf("=======================================================\n");
-	f7(devid);
+	if (argc > 2) {
+		for (i = 0; i < CMD_N; ++i)
+			if (strcmp(argv[2], cmd[i]) == 0)
+				break;
+		if (i == CMD_N) {
+			fprintf(stderr, "%s: unrecognized command: %s\n", argv[0], argv[2]);
+			return 1;
+		}
+	}
+	switch(i) {
+	case CMD_TEST:
+		{
+			unsigned long tests = -1;
+
+			if (argc > 3)
+				sscanf(argv[3], "%li", &tests);
+
+			if (tests & 1) {
+				f1(devid);
+				printf("=======================================================\n");
+			}
+			if (tests & 2) {
+				f2(devid);
+				printf("=======================================================\n");
+			}
+			if (tests & 4) {
+				f3(devid);
+				printf("=======================================================\n");
+			}
+			if (tests & 8) {
+				f4(devid);
+				printf("=======================================================\n");
+			}
+			if (tests & 0x10) {
+				f5(devid);
+				printf("=======================================================\n");
+			}
+			if (tests & 0x20) {
+				f6(devid);
+				printf("=======================================================\n");
+			}
+			if (tests & 0x40) {
+				f7(devid);
+			}
+		}
+		break;
+
+	case CMD_DUMP:
+		{
+			unsigned long addr = 0;
+			unsigned long sz = 256;
+
+			if (argc > 3)
+				sscanf(argv[3], "%li", &addr);
+			if (argc > 4)
+				sscanf(argv[4], "%li", &sz);
+			do_dump(devid, addr, sz);
+		}
+		break;
+
+	case CMD_MEMDUMP:
+		{
+			unsigned long addr = 0;
+
+			if (argc > 3)
+				sscanf(argv[3], "%li", &addr);
+			do_memdump(devid, addr);
+		}
+		break;
+	}
 	return 0;
 }

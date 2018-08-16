@@ -157,6 +157,11 @@ static irqreturn_t irq_handler(int irq, void *dev_id)
 	return ret;
 }
 
+static bool cacheable(unsigned long pfn, unsigned long n_pages)
+{
+	return true;
+}
+
 #if defined(__XTENSA__)
 static void clean_cache(void *vaddr, phys_addr_t paddr, unsigned long sz)
 {
@@ -200,6 +205,7 @@ static const struct xrp_hw_ops hw_ops = {
 
 	.send_irq = send_irq,
 
+	.cacheable = cacheable,
 	.clean_cache = clean_cache,
 	.flush_cache = flush_cache,
 };

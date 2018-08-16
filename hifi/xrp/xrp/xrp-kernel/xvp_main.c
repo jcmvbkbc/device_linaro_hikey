@@ -137,7 +137,7 @@ static inline void xrp_dma_sync_for_device(struct xvp *xvp, phys_addr_t phys,
 					   unsigned long size,
 					   unsigned long flags)
 {
-	dma_sync_single_for_device(xvp->dev, phys, size,
+	dma_sync_single_for_device(xvp->dev, phys_to_dma(xvp->dev, phys), size,
 				   xrp_dma_direction[flags & XRP_FLAG_READ_WRITE]);
 }
 
@@ -145,7 +145,7 @@ static inline void xrp_dma_sync_for_cpu(struct xvp *xvp, phys_addr_t phys,
 					unsigned long size,
 					unsigned long flags)
 {
-	dma_sync_single_for_cpu(xvp->dev, phys, size,
+	dma_sync_single_for_cpu(xvp->dev, phys_to_dma(xvp->dev, phys), size,
 				xrp_dma_direction[flags & XRP_FLAG_READ_WRITE]);
 }
 
@@ -204,6 +204,14 @@ static inline void xrp_send_device_irq(struct xvp *xvp)
 {
 	if (xvp->hw_ops->send_irq)
 		xvp->hw_ops->send_irq(xvp->hw_arg);
+}
+
+static inline bool xrp_panic_check(struct xvp *xvp)
+{
+	if (xvp->hw_ops->panic_check)
+		return xvp->hw_ops->panic_check(xvp->hw_arg);
+	else
+		return false;
 }
 
 static void xrp_add_known_file(struct file *filp)
@@ -274,6 +282,8 @@ static int xrp_synchronize(struct xvp *xvp)
 		v = xrp_comm_read32(&shared_sync->sync);
 		if (v == XRP_DSP_SYNC_DSP_READY)
 			break;
+		if (xrp_panic_check(xvp))
+			goto err;
 		schedule();
 	} while (time_before(jiffies, deadline));
 
@@ -291,6 +301,8 @@ static int xrp_synchronize(struct xvp *xvp)
 		v = xrp_comm_read32(&shared_sync->sync);
 		if (v == XRP_DSP_SYNC_DSP_TO_HOST)
 			break;
+		if (xrp_panic_check(xvp))
+			goto err;
 		schedule();
 	} while (time_before(jiffies, deadline));
 
@@ -305,6 +317,8 @@ static int xrp_synchronize(struct xvp *xvp)
 	if (xvp->host_irq_mode) {
 		int res = wait_for_completion_timeout(&xvp->completion,
 						      firmware_command_timeout * HZ);
+		if (xrp_panic_check(xvp))
+			goto err;
 		if (res == 0) {
 			dev_err(xvp->dev,
 				"host IRQ mode is requested, but DSP couldn't deliver IRQ during synchronization\n");
@@ -318,9 +332,8 @@ err:
 	return ret;
 }
 
-static bool xrp_cmd_complete(void *p)
+static bool xrp_cmd_complete(struct xvp *xvp)
 {
-	struct xvp *xvp = p;
 	struct xrp_dsp_cmd __iomem *cmd = xvp->comm;
 	u32 flags = xrp_comm_read32(&cmd->flags);
 
@@ -661,7 +674,7 @@ static long xvp_copy_virt_to_phys(struct xvp_file *xvp_file,
 				  struct xrp_alien_mapping *mapping)
 {
 	phys_addr_t phys;
-	unsigned long align = clamp(vaddr & -vaddr, PAGE_SIZE, 16ul);
+	unsigned long align = clamp(vaddr & -vaddr, 16ul, PAGE_SIZE);
 	unsigned long offset = vaddr & (align - 1);
 	struct xrp_allocation *allocation;
 	long rc;
@@ -852,6 +865,7 @@ static long __xrp_share_block(struct file *filp,
 			mapping->type = XRP_MAPPING_NATIVE;
 			mapping->xrp_allocation = xrp_allocation;
 			xrp_allocation_get(mapping->xrp_allocation);
+			do_cache = vma_needs_cache_ops(vma);
 		}
 	}
 	if (rc < 0) {
@@ -862,20 +876,34 @@ static long __xrp_share_block(struct file *filp,
 		pr_debug("%s: non-XVP allocation at 0x%08lx\n",
 			 __func__, virt);
 
-		if (xvp->hw_ops->clean_cache ||
+		/*
+		 * A range can only be mapped directly if it is either
+		 * uncached or HW-specific cache operations can handle it.
+		 */
+		if (xvp->hw_ops->cacheable ||
 		    (vma && !vma_needs_cache_ops(vma))) {
 			if (vma && vma->vm_flags & (VM_IO | VM_PFNMAP)) {
 				rc = xvp_pfn_virt_to_phys(xvp_file, vma,
 							  virt, size,
 							  &phys,
 							  alien_mapping);
+				if (rc == 0 && vma_needs_cache_ops(vma) &&
+				    !xvp->hw_ops->cacheable(phys >> PAGE_SHIFT,
+							    size >> PAGE_SHIFT))
+					rc = -EINVAL;
 			} else {
 				up_read(&mm->mmap_sem);
 				rc = xvp_gup_virt_to_phys(xvp_file, virt,
 							  size, &phys,
 							  alien_mapping);
+				/*
+				 * HW-specific cache operations must handle
+				 * ordinary memory.
+				 */
 				down_read(&mm->mmap_sem);
 			}
+			if (rc == 0 && vma && !vma_needs_cache_ops(vma))
+				do_cache = false;
 		} else {
 			pr_debug("%s: not mapping directly: no HW cache ops\n",
 				 __func__);
@@ -908,7 +936,8 @@ static long __xrp_share_block(struct file *filp,
 	pr_debug("%s: mapping = %p, mapping->type = %d\n",
 		 __func__, mapping, mapping->type);
 
-	if (do_cache && xvp->hw_ops->clean_cache) {
+	WARN_ON_ONCE(do_cache && !xvp->hw_ops->cacheable);
+	if (do_cache && xvp->hw_ops->cacheable) {
 		if (flags & XRP_FLAG_WRITE) {
 			xvp->hw_ops->flush_cache((void *)virt, phys, size);
 		} else if (flags & XRP_FLAG_READ) {
@@ -1034,17 +1063,19 @@ static long xrp_ioctl_free(struct file *filp,
 	return -EINVAL;
 }
 
-static long xvp_complete_cmd_irq(struct completion *completion,
-				 bool (*cmd_complete)(void *p),
-				 void *p)
+static long xvp_complete_cmd_irq(struct xvp *xvp,
+				 struct completion *completion,
+				 bool (*cmd_complete)(struct xvp *p))
 {
 	long timeout = firmware_command_timeout * HZ;
 
 	do {
 		timeout = wait_for_completion_interruptible_timeout(completion,
 								    timeout);
-		if (cmd_complete(p))
+		if (cmd_complete(xvp))
 			return 0;
+		if (xrp_panic_check(xvp))
+			return -EBUSY;
 	} while (timeout > 0);
 
 	if (timeout == 0)
@@ -1052,14 +1083,16 @@ static long xvp_complete_cmd_irq(struct completion *completion,
 	return timeout;
 }
 
-static long xvp_complete_cmd_poll(bool (*cmd_complete)(void *p),
-				  void *p)
+static long xvp_complete_cmd_poll(struct xvp *xvp,
+				  bool (*cmd_complete)(struct xvp *p))
 {
 	unsigned long deadline = jiffies + firmware_command_timeout * HZ;
 
 	do {
-		if (cmd_complete(p))
+		if (cmd_complete(xvp))
 			return 0;
+		if (xrp_panic_check(xvp))
+			return -EBUSY;
 		schedule();
 	} while (time_before(jiffies, deadline));
 
@@ -1379,12 +1412,12 @@ static long xrp_ioctl_submit_sync(struct file *filp,
 			xrp_send_device_irq(xvp);
 
 			if (xvp->host_irq_mode) {
-				ret = xvp_complete_cmd_irq(&xvp->completion,
-							   xrp_cmd_complete,
-							   xvp);
+				ret = xvp_complete_cmd_irq(xvp,
+							   &xvp->completion,
+							   xrp_cmd_complete);
 			} else {
-				ret = xvp_complete_cmd_poll(xrp_cmd_complete,
-							    xvp);
+				ret = xvp_complete_cmd_poll(xvp,
+							    xrp_cmd_complete);
 			}
 
 			/* copy back inline data */
@@ -1482,8 +1515,13 @@ static int xvp_mmap(struct file *filp, struct vm_area_struct *vma)
 		struct xvp *xvp = xvp_file->xvp;
 		pgprot_t prot = vma->vm_page_prot;
 
-		if (!xvp->hw_ops->clean_cache)
+		if (!xvp->hw_ops->cacheable ||
+		    !xvp->hw_ops->cacheable(pfn,
+					    (vma->vm_end - vma->vm_start)
+					    >> PAGE_SHIFT)) {
 			prot = pgprot_writecombine(prot);
+			vma->vm_page_prot = prot;
+		}
 
 		err = remap_pfn_range(vma, vma->vm_start, pfn,
 				      vma->vm_end - vma->vm_start,
@@ -1530,8 +1568,8 @@ static int xvp_close(struct inode *inode, struct file *filp)
 	pr_debug("%s\n", __func__);
 
 	xrp_remove_known_file(filp);
-	devm_kfree(xvp_file->xvp->dev, xvp_file);
 	pm_runtime_put_sync(xvp_file->xvp->dev);
+	devm_kfree(xvp_file->xvp->dev, xvp_file);
 	return 0;
 }
 
@@ -1729,9 +1767,14 @@ static long xrp_init_common(struct platform_device *pdev,
 {
 	long ret;
 	char nodename[sizeof("xvp") + 3 * sizeof(int)];
-	struct xvp *xvp = devm_kzalloc(&pdev->dev, sizeof(*xvp), GFP_KERNEL);
+	struct xvp *xvp;
 	int nodeid;
 
+	if (WARN_ON(hw_ops->cacheable &&
+	    (!hw_ops->clean_cache || !hw_ops->flush_cache)))
+		return -EINVAL;
+
+	xvp = devm_kzalloc(&pdev->dev, sizeof(*xvp), GFP_KERNEL);
 	if (!xvp) {
 		ret = -ENOMEM;
 		goto err;
@@ -1867,6 +1910,11 @@ static void *get_hw_sync_data(void *hw_arg, size_t *sz)
 	return p;
 }
 
+static bool cacheable(unsigned long pfn, unsigned long n_pages)
+{
+	return true;
+}
+
 static void clean_cache(void *vaddr, phys_addr_t paddr, unsigned long sz)
 {
 }
@@ -1877,6 +1925,7 @@ static void flush_cache(void *vaddr, phys_addr_t paddr, unsigned long sz)
 
 static const struct xrp_hw_ops hw_ops = {
 	.get_hw_sync_data = get_hw_sync_data,
+	.cacheable = cacheable,
 	.clean_cache = clean_cache,
 	.flush_cache = flush_cache,
 };
