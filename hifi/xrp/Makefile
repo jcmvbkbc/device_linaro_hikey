@@ -7,7 +7,7 @@ builddir := $(srcdir)/build
 CPPFLAGS := -I$(builddir)/include
 CFLAGS := -mlongcalls -mtext-section-literals
 LDFLAGS := -mlsp=$(srcdir)/../xaf/hifi-dpf/build_hikey/hifi_hikey_lsp \
-	-Wl,--defsym,_memmap_cacheattr_reset=0x22222222 \
+	-Wl,--defsym,_memmap_cacheattr_reset=0x24222222 \
 	-Wl,--defsym,xrp_dsp_comm_base_magic=0x20161006
 
 LIBS := $(builddir)/lib/libxrp-dsp.a  $(builddir)/lib/libxrp-dsp-hw-simple.a
