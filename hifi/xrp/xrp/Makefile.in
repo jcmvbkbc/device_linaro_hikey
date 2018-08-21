@@ -180,7 +180,7 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = xrp-dsp xrp-host xrp-example
+DIST_SUBDIRS = xrp-common xrp-dsp xrp-host xrp-example
 am__DIST_COMMON = $(srcdir)/Makefile.in $(top_srcdir)/autoconf/compile \
 	$(top_srcdir)/autoconf/config.guess \
 	$(top_srcdir)/autoconf/config.sub \
@@ -250,7 +250,6 @@ DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DSP_CACHEATTR = @DSP_CACHEATTR@
 DSP_COMM_BASE = @DSP_COMM_BASE@
-DSP_CORE = @DSP_CORE@
 DSP_LSP = @DSP_LSP@
 DTC = @DTC@
 ECHO_C = @ECHO_C@
@@ -260,6 +259,7 @@ EGREP = @EGREP@
 EXEEXT = @EXEEXT@
 GREP = @GREP@
 HOST_OS = @HOST_OS@
+HW_PORT = @HW_PORT@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -341,7 +341,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = $(am__append_1) $(am__append_2) $(am__append_3)
+SUBDIRS = xrp-common $(am__append_1) $(am__append_2) $(am__append_3)
 all: all-recursive
 
 .SUFFIXES:

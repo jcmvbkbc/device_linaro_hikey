@@ -29,9 +29,13 @@
 
 #include "xrp_dsp_hw.h"
 #include "xrp_debug.h"
-
-typedef uint32_t __u32;
+#include "xrp_types.h"
 #include "xrp_hw_simple_dsp_interface.h"
+
+static uint32_t mmio_base;
+
+#define device_mmio(off) ((volatile void *)mmio_base + off)
+#define host_mmio(off) ((volatile void *)mmio_base + off)
 
 enum xrp_irq_mode {
 	XRP_IRQ_NONE,
@@ -40,25 +44,30 @@ enum xrp_irq_mode {
 };
 static enum xrp_irq_mode host_irq_mode;
 static enum xrp_irq_mode device_irq_mode;
+
+static uint32_t device_irq_offset;
+static uint32_t device_irq_bit;
 static uint32_t device_irq;
 
-void ipcm_send(void);
-void ipcm_ack(void);
+static uint32_t host_irq_offset;
+static uint32_t host_irq_bit;
+
 
 static void xrp_irq_handler(void)
 {
 	pr_debug("%s\n", __func__);
-	if (device_irq_mode == XRP_IRQ_LEVEL) {
-		ipcm_ack();
-	}
+	if (device_irq_mode == XRP_IRQ_LEVEL)
+		XT_S32RI(0, device_mmio(device_irq_offset), 0);
 }
 
 void xrp_hw_send_host_irq(void)
 {
 	switch (host_irq_mode) {
 	case XRP_IRQ_EDGE:
+		XT_S32RI(0, host_mmio(host_irq_offset), 0);
+		/* fall through */
 	case XRP_IRQ_LEVEL:
-		ipcm_send();
+		XT_S32RI(1u << host_irq_bit, host_mmio(host_irq_offset), 0);
 		break;
 	default:
 		break;
@@ -89,19 +98,27 @@ void xrp_hw_set_sync_data(void *p)
 	};
 	struct xrp_hw_simple_sync_data *hw_sync = p;
 
+	mmio_base = hw_sync->device_mmio_base;
+	pr_debug("%s: mmio_base: 0x%08x\n", __func__, mmio_base);
+
 	if (hw_sync->device_irq_mode < sizeof(irq_mode) / sizeof(*irq_mode)) {
 		device_irq_mode = irq_mode[hw_sync->device_irq_mode];
+		device_irq_offset = hw_sync->device_irq_offset;
+		device_irq_bit = hw_sync->device_irq_bit;
 		device_irq = hw_sync->device_irq;
-		pr_debug("%s: device_irq_mode = %d, device_irq = %d\n",
-			__func__, device_irq_mode, device_irq);
+		pr_debug("%s: device_irq_mode = %d, device_irq_offset = %d, device_irq_bit = %d, device_irq = %d\n",
+			__func__, device_irq_mode,
+			device_irq_offset, device_irq_bit, device_irq);
 	} else {
 		device_irq_mode = XRP_IRQ_NONE;
 	}
 
 	if (hw_sync->host_irq_mode < sizeof(irq_mode) / sizeof(*irq_mode)) {
 		host_irq_mode = irq_mode[hw_sync->host_irq_mode];
-		pr_debug("%s: host_irq_mode = %d\n",
-			__func__, host_irq_mode);
+		host_irq_offset = hw_sync->host_irq_offset;
+		host_irq_bit = hw_sync->host_irq_bit;
+		pr_debug("%s: host_irq_mode = %d, host_irq_offset = %d, host_irq_bit = %d\n",
+			__func__, host_irq_mode, host_irq_offset, host_irq_bit);
 	} else {
 		host_irq_mode = XRP_IRQ_NONE;
 	}
@@ -110,4 +127,12 @@ void xrp_hw_set_sync_data(void *p)
 		_xtos_interrupt_disable(device_irq);
 		_xtos_set_interrupt_handler(device_irq, xrp_irq_handler);
 	}
+}
+
+void xrp_hw_panic(void)
+{
+}
+
+void xrp_hw_init(void)
+{
 }

@@ -626,7 +626,7 @@ LIBOBJS
 DSP_CACHEATTR
 DSP_COMM_BASE
 DSP_LSP
-DSP_CORE
+HW_PORT
 DTC
 LIBFDT_LDFLAGS
 LIBFDT_CPPFLAGS
@@ -760,6 +760,7 @@ enable_single
 enable_example
 enable_threads
 with_libfdt
+enable_port
 '
       ac_precious_vars='build_alias
 host_alias
@@ -772,7 +773,6 @@ CPPFLAGS
 CCAS
 CCASFLAGS
 CPP
-DSP_CORE
 DSP_LSP
 DSP_COMM_BASE
 DSP_CACHEATTR
@@ -1418,6 +1418,7 @@ Optional Features:
   --enable-single         build single library/example [no]
   --enable-example        build example application [no]
   --enable-threads        enable thread support [detect]
+  --enable-port[=ARG]     enable port ARG [simple]
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1435,7 +1436,6 @@ Some influential environment variables:
   CCAS        assembler compiler command (defaults to CC)
   CCASFLAGS   assembler compiler flags (defaults to CFLAGS)
   CPP         C preprocessor
-  DSP_CORE    compile DSP code for the specific Xtensa core
   DSP_LSP     use specific Xtensa LSP for example firmware
   DSP_COMM_BASE
               DSP communication base address for fast simulation example
@@ -4168,7 +4168,7 @@ IFS=$ac_save_IFS
 case $host_os in *\ *) host_os=`echo "$host_os" | sed 's/ /-/g'`;; esac
 
 
-ac_config_files="$ac_config_files Makefile xrp-dsp/Makefile xrp-example/Makefile xrp-host/Makefile"
+ac_config_files="$ac_config_files Makefile xrp-common/Makefile xrp-dsp/Makefile xrp-example/Makefile xrp-host/Makefile"
 
 
 # Check whether --enable-dsp was given.
@@ -4939,8 +4939,32 @@ fi
 
 fi
 
-DSP_CORE="${DSP_CORE:-visionp6cnn_ao_exls}"
+ac_fn_c_check_func "$LINENO" "fopencookie" "ac_cv_func_fopencookie"
+if test "x$ac_cv_func_fopencookie" = xyes; then :
+  $as_echo "#define HAVE_OPENCOOKIE 1" >>confdefs.h
 
+fi
+
+
+HW_PORT=simple
+# Check whether --enable-port was given.
+if test "${enable_port+set}" = set; then :
+  enableval=$enable_port; HW_PORT="${enableval}"
+fi
+
+
+
+case "${HW_PORT}" in
+	hikey960)
+		CC=${CC:-xt-xcc --xtensa-core=hifi3_hikey960}
+		DSP_LSP=${DSP_LSP:-\$(srcdir)/hikey960}
+		DSP_CACHEATTR=${DSP_CACHEATTR:-0x24222222}
+		;;
+esac
+
+ac_config_files="$ac_config_files xrp-dsp/simple/Makefile"
+
+ac_config_files="$ac_config_files xrp-dsp/hikey960/Makefile"
 
 
 DSP_LSP="${DSP_LSP:-\$(srcdir)/MW-MP/P6_0/xtensa-elf/lib/sim-stacklocal}"
@@ -5732,9 +5756,12 @@ do
   case $ac_config_target in
     "depfiles") CONFIG_COMMANDS="$CONFIG_COMMANDS depfiles" ;;
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
+    "xrp-common/Makefile") CONFIG_FILES="$CONFIG_FILES xrp-common/Makefile" ;;
     "xrp-dsp/Makefile") CONFIG_FILES="$CONFIG_FILES xrp-dsp/Makefile" ;;
     "xrp-example/Makefile") CONFIG_FILES="$CONFIG_FILES xrp-example/Makefile" ;;
     "xrp-host/Makefile") CONFIG_FILES="$CONFIG_FILES xrp-host/Makefile" ;;
+    "xrp-dsp/simple/Makefile") CONFIG_FILES="$CONFIG_FILES xrp-dsp/simple/Makefile" ;;
+    "xrp-dsp/hikey960/Makefile") CONFIG_FILES="$CONFIG_FILES xrp-dsp/hikey960/Makefile" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
   esac

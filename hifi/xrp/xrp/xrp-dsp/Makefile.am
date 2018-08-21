@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2017 Cadence Design Systems Inc.
+# Copyright (c) 2018 Cadence Design Systems Inc.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -21,11 +21,15 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-AM_CPPFLAGS = -I$(srcdir)/.. -I$(srcdir)/../xrp-common -I$(srcdir)/../xrp-kernel
-AM_CFLAGS = -W -Wall --xtensa-core=$(DSP_CORE)
+SUBDIRS = $(HW_PORT)
+
+AM_CPPFLAGS = -I$(srcdir)/.. \
+	      -I$(srcdir)/../xrp-common \
+	      -I$(srcdir)/../xrp-kernel
+AM_CFLAGS = -W -Wall
 
 include_HEADERS = ../xrp_api.h xrp_dsp_hw.h
-lib_LIBRARIES = libxrp-dsp.a libxrp-dsp-hw-simple.a
+lib_LIBRARIES = libxrp-dsp.a
 
-libxrp_dsp_a_SOURCES = xrp_dsp.c ../xrp-common/xrp_ns.c xrp_dsp_framework.c
-libxrp_dsp_hw_simple_a_SOURCES = xrp_dsp_hw_simple.c
+libxrp_dsp_a_SOURCES = xrp_dsp.c \
+		       xrp_dsp_framework.c

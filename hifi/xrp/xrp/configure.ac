@@ -31,9 +31,10 @@ AM_PROG_AS
 AC_PROG_RANLIB
 AC_CANONICAL_HOST
 AC_CONFIG_FILES([Makefile
-		xrp-dsp/Makefile
-		xrp-example/Makefile
-		xrp-host/Makefile])
+		 xrp-common/Makefile
+		 xrp-dsp/Makefile
+		 xrp-example/Makefile
+		 xrp-host/Makefile])
 
 AC_ARG_ENABLE(dsp,
 	      [AS_HELP_STRING([--enable-dsp],
@@ -176,8 +177,26 @@ AS_IF([test x$build_dsp = xfalse -a x$build_example = xtrue -a x$build_standalon
 	    [AC_MSG_FAILURE([No usable dtc is found])])
       ])
 
-AC_SUBST(DSP_CORE, ["${DSP_CORE:-visionp6cnn_ao_exls}"])
-AC_ARG_VAR(DSP_CORE, [compile DSP code for the specific Xtensa core])
+AC_CHECK_FUNC([fopencookie],[AC_DEFINE([HAVE_OPENCOOKIE])])
+
+HW_PORT=simple
+AC_ARG_ENABLE(port,
+	      [AS_HELP_STRING([--enable-port[[=ARG]]],
+			      [enable port ARG [simple]])],
+	      [HW_PORT="${enableval}"],
+	      [])
+AC_SUBST(HW_PORT)
+
+case "${HW_PORT}" in
+	hikey960)
+		CC=${CC:-xt-xcc --xtensa-core=hifi3_hikey960}
+		DSP_LSP=${DSP_LSP:-\$(srcdir)/hikey960}
+		DSP_CACHEATTR=${DSP_CACHEATTR:-0x24222222}
+		;;
+esac
+
+AC_CONFIG_FILES([xrp-dsp/simple/Makefile])
+AC_CONFIG_FILES([xrp-dsp/hikey960/Makefile])
 
 AC_SUBST(DSP_LSP, ["${DSP_LSP:-\$(srcdir)/MW-MP/P6_0/xtensa-elf/lib/sim-stacklocal}"])
 AC_ARG_VAR(DSP_LSP, [use specific Xtensa LSP for example firmware])

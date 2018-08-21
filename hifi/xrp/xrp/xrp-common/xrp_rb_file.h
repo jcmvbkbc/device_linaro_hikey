@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Cadence Design Systems Inc.
+ * Copyright (c) 2018 Cadence Design Systems Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -21,29 +21,13 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef _EXAMPLE_NAMESPACE_H
-#define _EXAMPLE_NAMESPACE_H
+#ifndef XRP_RB_FILE_H
+#define XRP_RB_FILE_H
 
-#define XRP_EXAMPLE_V1_NSID_INITIALIZER \
-	{0x47, 0xf4, 0x5d, 0x8c, 0x99, 0xc5, 0x11, 0xe7, \
-	 0xb5, 0x86, 0x00, 0x21, 0xcc, 0x4a, 0x5f, 0xb6}
-#define XRP_EXAMPLE_V1_NSID (unsigned char [])XRP_EXAMPLE_V1_NSID_INITIALIZER
+#include <stdio.h>
+#include <xrp_types.h>
+#include <xrp_ring_buffer.h>
 
-#define XRP_EXAMPLE_V2_NSID_INITIALIZER \
-	{0x33, 0x56, 0xfc, 0x3c, 0x63, 0x27, 0x40, 0x96, \
-	 0x8a, 0x33, 0x1a, 0x5c, 0xca, 0x3b, 0xa1, 0x64}
-#define XRP_EXAMPLE_V2_NSID (unsigned char [])XRP_EXAMPLE_V2_NSID_INITIALIZER
-
-enum {
-	EXAMPLE_V2_CMD_OK,
-	EXAMPLE_V2_CMD_FAIL,
-};
-
-struct example_v2_cmd {
-	uint32_t cmd;
-};
-
-struct example_v2_rsp {
-};
+FILE *xrp_make_rb_file(struct xrp_ring_buffer *rb);
 
 #endif

@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2017 Cadence Design Systems Inc.
+ * XRP interface between hardware-specific linux and DSP parts of HiKey960
+ *
+ * Copyright (c) 2018 Cadence Design Systems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -19,31 +21,33 @@
  * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * Alternatively you can use and distribute this file under the terms of
+ * the GNU General Public License version 2 or later.
  */
 
-#ifndef _EXAMPLE_NAMESPACE_H
-#define _EXAMPLE_NAMESPACE_H
+#ifndef _XRP_KERNEL_HIKEY960_DSP_INTERFACE
+#define _XRP_KERNEL_HIKEY960_DSP_INTERFACE
 
-#define XRP_EXAMPLE_V1_NSID_INITIALIZER \
-	{0x47, 0xf4, 0x5d, 0x8c, 0x99, 0xc5, 0x11, 0xe7, \
-	 0xb5, 0x86, 0x00, 0x21, 0xcc, 0x4a, 0x5f, 0xb6}
-#define XRP_EXAMPLE_V1_NSID (unsigned char [])XRP_EXAMPLE_V1_NSID_INITIALIZER
-
-#define XRP_EXAMPLE_V2_NSID_INITIALIZER \
-	{0x33, 0x56, 0xfc, 0x3c, 0x63, 0x27, 0x40, 0x96, \
-	 0x8a, 0x33, 0x1a, 0x5c, 0xca, 0x3b, 0xa1, 0x64}
-#define XRP_EXAMPLE_V2_NSID (unsigned char [])XRP_EXAMPLE_V2_NSID_INITIALIZER
+#include "xrp_ring_buffer.h"
 
 enum {
-	EXAMPLE_V2_CMD_OK,
-	EXAMPLE_V2_CMD_FAIL,
+	XRP_DSP_SYNC_IRQ_MODE_NONE = 0x0,
+	XRP_DSP_SYNC_IRQ_MODE_LEVEL = 0x1,
+	XRP_DSP_SYNC_IRQ_MODE_EDGE = 0x2,
 };
 
-struct example_v2_cmd {
-	uint32_t cmd;
+struct xrp_hw_hikey960_sync_data {
+	__u32 host_irq_mode;
+	__u32 device_irq_mode;
+	__u32 device_irq;
 };
 
-struct example_v2_rsp {
+struct xrp_hw_hikey960_panic {
+	__u32 panic;
+	__u32 ccount;
+	__u32 reserved[2];
+	struct xrp_ring_buffer rb;
 };
 
 #endif

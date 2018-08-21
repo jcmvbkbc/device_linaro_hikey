@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2017 Cadence Design Systems Inc.
+# Copyright (c) 2018 Cadence Design Systems Inc.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,31 +20,13 @@
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-# Alternatively you can use and distribute this file under the terms of
-# the GNU General Public License version 2 or later.
-#
 
-xrp-y += xvp_main.o xrp_address_map.o xrp_alloc.o
-xrp-$(CONFIG_OF) += xrp_firmware.o
-xrp-$(CONFIG_CMA) += xrp_cma_alloc.o
+AM_CPPFLAGS = -I$(srcdir)/.. \
+	      -I$(srcdir)/../.. \
+	      -I$(srcdir)/../../xrp-common \
+	      -I$(srcdir)/../../xrp-kernel
+AM_CFLAGS = -W -Wall
 
-obj-$(CONFIG_XRP) += xrp.o
-obj-$(CONFIG_XRP_HW_SIMPLE) += xrp_hw_simple.o
-obj-$(CONFIG_XRP_HW_HIKEY960) += xrp_hw_hikey960.o
+lib_LIBRARIES = libxrp-dsp-hw-simple.a
 
-ccflags-$(CONFIG_XRP_DEBUG) += -DDEBUG
-ccflags-$(CONFIG_XRP_HW_HIKEY960) += -I$(srctree)/drivers/hisi/hifi_mailbox
-
-# Remove this comment and all lines below it when integrating this Makefile
-# into the linux kernel make system.
-#
-# sed -i % '/Remove this comment and all lines below it/,$d'
-#
-
-KSRC ?= /lib/modules/$(shell uname -r)/build
-
-modules:
-	$(MAKE) -C $(KSRC) M=`pwd` CONFIG_XRP=m modules
-
-%:
-	$(MAKE) -C $(KSRC) M=`pwd` CONFIG_XRP=m $@
+libxrp_dsp_hw_simple_a_SOURCES = xrp_dsp_hw_simple.c

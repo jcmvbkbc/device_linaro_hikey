@@ -30,7 +30,6 @@
 #define _XRP_HW
 
 #include <linux/irqreturn.h>
-#include <linux/mm_types.h>
 #include <linux/platform_device.h>
 #include <linux/types.h>
 
@@ -53,9 +52,25 @@ struct xrp_hw_ops {
 	/* send IRQ to the core */
 	void (*send_irq)(void *hw_arg);
 
-	bool (*cacheable)(unsigned long pfn, unsigned long n_pages);
-	void (*clean_cache)(void *vaddr, phys_addr_t paddr, unsigned long sz);
-	void (*flush_cache)(void *vaddr, phys_addr_t paddr, unsigned long sz);
+	/*
+	 * check whether region of physical memory may be handled by
+	 * dma_sync_* operations
+	 */
+	bool (*cacheable)(void *hw_arg, unsigned long pfn, unsigned long n_pages);
+	/*
+	 * synchronize region of memory for DSP access.
+	 * flags: XRP_FLAG_{READ,WRITE,READWRITE}
+	 */
+	void (*dma_sync_for_device)(void *hw_arg,
+				    void *vaddr, phys_addr_t paddr,
+				    unsigned long sz, unsigned flags);
+	/*
+	 * synchronize region of memory for host access.
+	 * flags: XRP_FLAG_{READ,WRITE,READWRITE}
+	 */
+	void (*dma_sync_for_cpu)(void *hw_arg,
+				 void *vaddr, phys_addr_t paddr,
+				 unsigned long sz, unsigned flags);
 
 	/* memcpy data/code to device-specific memory */
 	void (*memcpy_tohw)(void __iomem *dst, const void *src, size_t sz);
@@ -78,6 +93,7 @@ long xrp_init_cma(struct platform_device *pdev, enum xrp_init_flags flags,
 		  const struct xrp_hw_ops *hw, void *hw_arg);
 
 int xrp_deinit(struct platform_device *pdev);
+int xrp_deinit_hw(struct platform_device *pdev, void **hw_arg);
 irqreturn_t xrp_irq_handler(int irq, struct xvp *xvp);
 int xrp_runtime_resume(struct device *dev);
 int xrp_runtime_suspend(struct device *dev);
